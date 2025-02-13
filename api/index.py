@@ -64,15 +64,31 @@ def vector_embedding():
     vectors = FAISS.from_documents(final_documents, embeddings)
     return vectors
 
-@app.on_event("startup")
-async def startup_event():
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """
-    Create the vector_store on startup. This ensures that
-    the FAISS index is built once and is available for all API calls.
+    Create the vector_store on startup and ensure it is available for all API calls.
     """
     global vector_store
     vector_store = vector_embedding()
     print("Vector Store DB is ready.")
+    yield
+    # Perform any cleanup here if necessary
+
+app = FastAPI(lifespan=lifespan)
+
+# Add CORS middleware to handle CORS issues
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Adjust this to your needs
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class QueryRequest(BaseModel):
     query: str
