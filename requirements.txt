@@ -1,1 +1,15 @@
-Flask==3.0.3
+faiss-cpu
+groq
+langchain-groq
+PyPDF2
+langchain_google_genai
+langchain
+streamlit
+langchain_community
+python-dotenv
+pypdf
+requests
+fastapi
+uvicorn
+requests
+python-dotenv
