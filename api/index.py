@@ -1,40 +1,46 @@
 import os
+import json
 import time
-import requests
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from dotenv import load_dotenv
 
-# Import LangChain and related modules
-from langchain_groq import ChatGroq
+# LangChain imports
+from langchain_community.vectorstores import FAISS
+from langchain_community.document_loaders import PyPDFDirectoryLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains import create_retrieval_chain
-from langchain_community.vectorstores import FAISS
-from langchain_community.document_loaders import PyPDFDirectoryLoader
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_groq import ChatGroq
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
-groq_api_key = os.getenv('GROQ_API_KEY')
+groq_api_key = os.getenv("GROQ_API_KEY")
 os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")
-google_search_api_key = os.getenv("GOOGLE_SEARCH_API_KEY")  # Your Google Custom Search API Key
-google_cx = os.getenv("GOOGLE_CX")  # Your Google Custom Search Engine CX
 
-app = FastAPI()
+app = FastAPI(title="DeepSEEK API")
 
-# Initialize the language model (ChatGroq in this example)
+# Initialize the language model (ChatGroq is used here)
 llm = ChatGroq(groq_api_key=groq_api_key, model_name="Llama3-8b-8192")
 
-# Set up the prompt for Alfred
+# Define Alfred's prompt template
 prompt = ChatPromptTemplate.from_template(
     """
 You are 'Alfred', a friendly and knowledgeable assistant.
 Answer the following question using the provided context.
-Keep the answer short but also ensure that you cover all the essential aspects.
-Mention the important points in bullets or highlight them.
-Just give 2 lines answer if the question is not relevant to the content.
+Keep the answer brief, but ensure you cover all the essential aspects.
+If it is Machine Learning related, aim for 100-150 words;
+if it is a Python question, aim for 150-200 words.
+Mention important points in bullets or highlight them.
+Give relevent 2,3 google links
+Provide:
+- Lecture video number (if applicable)
+- Slide number (if applicable)
+- Wikipedia link
+- Google top link (non-Wikipedia)
+Give all of these things after your RAG response.
 Context:
 {context}
 Question:
@@ -42,141 +48,118 @@ Question:
 """
 )
 
-# Global vector store will hold our document embeddings
-vector_store = None
-
-def vector_embedding():
-    """
-    Create the FAISS vector store from PDF documents.
-    Each document chunk has metadata (like PDF name and page/slide number) added.
-    """
+# -------------------------------
+# Persistent FAISS Vector Store Setup
+# -------------------------------
+def build_vector_store():
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    loader = PyPDFDirectoryLoader("api/pdf")  # Data Ingestion
-    docs = loader.load()  # Document Loading
+    loader = PyPDFDirectoryLoader("./pdf_files")  # Load PDFs from this folder
+    docs = loader.load()  # Document loading
 
-    # Add metadata (e.g., PDF name, page number)
+    # Attach metadata: PDF name and page/slide number
     for doc in docs:
         doc.metadata["source"] = doc.metadata.get("source", "Unknown PDF")
         doc.metadata["page"] = doc.metadata.get("page", "Unknown Page")
-
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    final_documents = text_splitter.split_documents(docs[:20])
-    vectors = FAISS.from_documents(final_documents, embeddings)
-    return vectors
+    final_docs = text_splitter.split_documents(docs[:20])
+    vectors = FAISS.from_documents(final_docs, embeddings)
+    return vectors, embeddings
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
+# Directory where the FAISS vector store is saved
+FAISS_INDEX_DIR = "./faiss_index"
+if os.path.exists(FAISS_INDEX_DIR):
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    # Set allow_dangerous_deserialization=True only if you trust the persisted file
+    vector_store = FAISS.load_local(FAISS_INDEX_DIR, embeddings, allow_dangerous_deserialization=True)
+else:
+    vector_store, embeddings = build_vector_store()
+    vector_store.save_local(FAISS_INDEX_DIR)
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Create the vector_store on startup and ensure it is available for all API calls.
-    """
-    global vector_store
-    vector_store = vector_embedding()
-    print("Vector Store DB is ready.")
-    yield
-    # Perform any cleanup here if necessary
+# -------------------------------
+# Persistent Chat History Setup
+# -------------------------------
+CHAT_HISTORY_FILE = "chat_history.json"
 
-app = FastAPI(lifespan=lifespan)
+def load_chat_history():
+    if os.path.exists(CHAT_HISTORY_FILE):
+        with open(CHAT_HISTORY_FILE, "r") as f:
+            try:
+                history = json.load(f)
+            except json.JSONDecodeError:
+                history = []
+    else:
+        history = []
+    return history
 
-# Add CORS middleware to handle CORS issues
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Adjust this to your needs
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+def save_chat_history(history):
+    with open(CHAT_HISTORY_FILE, "w") as f:
+        json.dump(history, f)
 
+def clear_chat_history():
+    if os.path.exists(CHAT_HISTORY_FILE):
+        os.remove(CHAT_HISTORY_FILE)
+
+# -------------------------------
+# Data Model for API Requests
+# -------------------------------
 class QueryRequest(BaseModel):
     query: str
-    option: str  # Accepts "Search Documents" or "Search the Internet"
 
-def format_similarity_results(results):
-    """
-    Format similarity search results with metadata, returning a list of dictionaries.
-    """
-    formatted_results = []
-    for result in results:
-        source = result.metadata.get("source", "Unknown PDF")
-        page = result.metadata.get("page", "Unknown Page")
-        content = result.page_content.strip()
-        formatted_results.append({
-            "pdf_name": source,
-            "page": page,
-            "relevant_content": content
-        })
-    return formatted_results
-
-def perform_web_search(query: str):
-    """
-    Use the Google Custom Search JSON API to perform web searches.
-    """
-    search_url = "https://www.googleapis.com/customsearch/v1"
-    params = {
-        "key": google_search_api_key,
-        "cx": google_cx,
-        "q": query,
-    }
-    response = requests.get(search_url, params=params)
-    if response.status_code == 200:
-        return response.json().get("items", [])
-    else:
-        return None
-
+# -------------------------------
+# API Endpoints
+# -------------------------------
 @app.post("/ask")
-async def ask(query_request: QueryRequest):
-    """
-    This endpoint accepts a JSON payload with 'query' and 'option'.
-    Based on the option, it either returns document-based answers (with metadata)
-    or performs a web search.
-    """
-    query_text = query_request.query
-    option = query_request.option
+def ask(query_request: QueryRequest):
+    user_query = query_request.query.strip()
+    if not user_query:
+        raise HTTPException(status_code=400, detail="Query cannot be empty.")
+    history = load_chat_history()
 
-    if option == "Search Documents":
-        # Create retrieval chain for document-based search
+    # Check if the query is for summarization
+    if "summarize" in user_query.lower():
+        if not history:
+            return {"response": "No chat history available."}
+        conversation = ""
+        # For summarization, consider all available interactions
+        for chat in history:
+            conversation += f"User: {chat['query']}\nAlfred: {chat['answer']}\n"
+        summarization_prompt = (
+            "You are Alfred, a summarization assistant. "
+            "Please summarize the following conversation history in concise bullet points:\n\n"
+            + conversation +
+            "\nSummary:"
+        )
+        summary_response = llm.invoke(summarization_prompt)
+        summary_text = summary_response.content  # Use .content to extract text
+        return {"response": summary_text}
+
+    # Otherwise, process a normal query or a follow-up conversation
+    if len(history) > 0:
+        # Include prior conversation context if present
+        context = "\n".join([f"User: {chat['query']}\nAlfred: {chat['answer']}" for chat in history])
+        context += f"\nUser: {user_query}"
+        retrieval_prompt = f"Based on this conversation:\n\n{context}\n\nProvide a response:"
+        response_obj = llm.invoke(retrieval_prompt)
+        response_text = response_obj.content
+    else:
+        # No prior context: use document-based retrieval
         document_chain = create_stuff_documents_chain(llm, prompt)
         retriever = vector_store.as_retriever()
         retrieval_chain = create_retrieval_chain(retriever, document_chain)
         start_time = time.process_time()
-        response = retrieval_chain.invoke({'input': query_text})
+        response = retrieval_chain.invoke({"input": user_query})
         elapsed_time = time.process_time() - start_time
-        
-        answer = response.get("answer", "No answer found.")
-        similarity_results = []
-        if "context" in response and response["context"]:
-            similarity_results = format_similarity_results(response["context"])
-        
-        return {
-            "mode": "documents",
-            "response_time": elapsed_time,
-            "answer": answer,
-            "similarity_results": similarity_results
-        }
+        response_text = response.get("answer", "")
+        # Optionally, you can include the response time in the response
+        # response_text = f"(Response Time: {elapsed_time:.2f} seconds) " + response_text
 
-    elif option == "Search the Internet":
-        # Perform a web search using the helper function
-        results = perform_web_search(query_text)
-        if results:
-            search_results = []
-            for item in results:
-                search_results.append({
-                    "title": item.get("title"),
-                    "snippet": item.get("snippet"),
-                    "link": item.get("link")
-                })
-            return {
-                "mode": "internet",
-                "answer": "Here are some resources I found on the internet:",
-                "search_results": search_results
-            }
-        else:
-            return {
-                "mode": "internet",
-                "answer": "Sorry, I couldn't find any relevant resources on the internet."
-            }
-    else:
-        raise HTTPException(status_code=400, detail="Invalid option provided. Use 'Search Documents' or 'Search the Internet'.")
+    # Append this conversation to chat history and save it persistently
+    history.append({"query": user_query, "answer": response_text})
+    save_chat_history(history)
+    
+    return {"response": response_text}
+
+@app.post("/clear")
+def clear():
+    clear_chat_history()
+    return {"message": "Chat history cleared. You can start a new conversation."}

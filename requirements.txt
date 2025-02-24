@@ -13,3 +13,5 @@ fastapi
 uvicorn
 requests
 python-dotenv
+graphviz
+fpdf
