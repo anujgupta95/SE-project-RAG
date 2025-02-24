@@ -22,6 +22,28 @@ os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")
 
 app = FastAPI(title="DeepSEEK API")
 
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+# Define allowed origins (add your frontend URL here)
+origins = [
+    "http://localhost:3000",  # Frontend running locally
+    "https://se-project-rag.onrender.com",  # Backend URL
+    "*"  # Add production frontend URL here
+]
+
+# Add CORS middleware to allow cross-origin requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # Allow only specified origins
+    allow_credentials=True,  # Allow cookies and credentials
+    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allow all headers
+)
+
+
 # Initialize the language model (ChatGroq is used here)
 llm = ChatGroq(groq_api_key=groq_api_key, model_name="Llama3-8b-8192")
 
