@@ -34,7 +34,6 @@ Keep the answer brief, but ensure you cover all the essential aspects.
 If it is Machine Learning related, aim for 100-150 words;
 if it is a Python question, aim for 150-200 words.
 Mention important points in bullets or highlight them.
-Give relevent 2,3 google links
 Provide:
 - Lecture video number (if applicable)
 - Slide number (if applicable)
