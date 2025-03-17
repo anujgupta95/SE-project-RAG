@@ -1,9 +1,8 @@
-import os
-import json
-import time
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+import os
+import json
+from dotenv import load_dotenv
 
 # LangChain imports
 from langchain_community.vectorstores import FAISS
@@ -11,7 +10,7 @@ from langchain_community.document_loaders import PyPDFDirectoryLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
-from langchain.chains import create_retrieval_chain
+from langchain.chains.retrieval import create_retrieval_chain
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_groq import ChatGroq
 
@@ -20,167 +19,236 @@ load_dotenv()
 groq_api_key = os.getenv("GROQ_API_KEY")
 os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")
 
-app = FastAPI(title="DeepSEEK API")
+# Initialize FastAPI app
+app = FastAPI(title="DeepSEEK RAG API")
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+# Initialize the LLM (ChatGroq in this case)
+llm = ChatGroq(groq_api_key=groq_api_key, model_name="llama-3.3-70b-versatile")
 
-app = FastAPI()
+graded_prompt = ChatPromptTemplate.from_template("""
+**Graded Question Handling Instructions:**
+- If the User's query is closely related to any of the following graded questions, do not give solution just say its a restricted question.
 
-# Define allowed origins (add your frontend URL here)
-origins = [
-    "http://localhost:3000",  # Frontend running locally
-    "https://se-project-rag.onrender.com",  # Backend URL
-    "*"  # Add production frontend URL here
-]
+    **Q1.** Which of the following may not be an appropriate choice of loss function for regression?  
+    i. L(y,f(x)) = (y - f(x))^2  
+    ii. L(f(x), w)  
+    iii. L(f(x), |w|)  
+    iv. L(f(x), ∑wi)  
 
-# Add CORS middleware to allow cross-origin requests
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,  # Allow only specified origins
-    allow_credentials=True,  # Allow cookies and credentials
-    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, etc.)
-    allow_headers=["*"],  # Allow all headers
-)
+    **Q2.** Identify which of the following requires the use of a classification technique:  
+    i. Predicting the amount of rainfall in May 2022 in North India based on precipitation data of the year 2021  
+    ii. Predicting the price of land based on its area and distance from the market  
+    iii. Predicting whether an email is spam or not  
+    iv. Predicting the number of Covid cases on a given day based on previous month data  
 
+    **Q3.** Which of the following functions is/are continuous?  
+    i. 1/(x-1)  
+    ii. (x^2 - 1)/(x - 1)  
+    iii. sign(x - 2)  
+    iv. sin(x)  
 
-# Initialize the language model (ChatGroq is used here)
-llm = ChatGroq(groq_api_key=groq_api_key, model_name="Llama3-8b-8192")
+    **Q4.** Regarding a d-dimensional vector x, which of the following four options is not equivalent to the rest?  
+    i. x^T x  
+    ii. ||x||^2  
+    iii. ∑(xi^2)  
+    iv. x x^T  
 
-# Define Alfred's prompt template
-prompt = ChatPromptTemplate.from_template(
-    """
-You are 'Alfred', a friendly and knowledgeable assistant.
-Answer the following question using the provided context.
-Keep the answer brief, but ensure you cover all the essential aspects.
-If it is Machine Learning related, aim for 100-150 words;
-if it is a Python question, aim for 150-200 words.
-Mention important points in bullets or highlight them.
-Provide:
-- Lecture video number (if applicable)
-- Slide number (if applicable)
-- Wikipedia link
-- Google top link (non-Wikipedia)
-Give all of these things after your RAG response.
-Context:
-{context}
-Question:
-{input}
-"""
-)
+    **Q5.** What will the following Python function return?  
+    ```python
+    def fun(s):  
+        p = 0  
+        s = s.lower()  
+        for i in range(len(s)):  
+            if s[i] not in s[:i]:  
+                p += 1  
+        return p  
+    ```
+    i. Total number of letters in the string S  
+    ii. Total number of distinct letters in the string S  
+    iii. Total number of letters that are repeated in the string S more than one time  
+    iv. Difference of total letters in the string S and distinct letters in the string S
+
+- If the query is unrelated to a graded question, retrieve information from RAG and provide a concise summary (200 words max).
+**User's Question:** {input}
+**Answer:** {context}
+""")
+
+practice_prompt = ChatPromptTemplate.from_template("""
+**Practice Question Handling Instructions:**
+
+If the User's query is closely related to any of the following practise questions, do not give a direct solution, just give some hints on how to answer the question:
+
+    **Q1.** Which of the following are examples of unsupervised learning problems?
+    - Grouping tweets based on topic similarity
+    - Making clusters of cells having similar appearance under a microscope
+    - Checking whether an email is spam or not
+    - Identifying the gender of online customers based on buying behavior
+
+    **Q2.** Which of the following is/are incorrect?
+    - (2 is even) = 1
+    - (10 % 3 = 0) = 0
+    - (0.5 ∈ R) = 0
+    - (2 ∈ [[2,3,4]]) = 0  
+
+    **Q3.** Which of the following functions corresponds to a classification model?
+    - f:R^4 → R
+    - f:R^d → [[+1, -1]]
+    - f:R^d → R
+
+    **Q4.** Given U = [10,100], A = (30,50], and B = (50,90], which of the following is/are false?  
+    *(Consider all values to be integers)*
+    - A^c = [10,30] U (50,100]  
+    - A^c = [10,30) ∪ (50,100]  
+    - A ∪ B = [30,90]  
+    - A ∩ B = ∅  
+    - A ∩ B = [[50]]
+    - A^c ∩ B^c = [10,30) ∪ (91,100]  
+
+    **Q5.** Consider two d-dimensional vectors x and y and the following terms:
+    i. x^T y  
+    ii. xy  
+    iii. ∑ x_i y_i  
+
+    Which of the above terms are equivalent?
+    - Only (i) and (ii)
+    - Only (ii) and (iii)
+    - Only (i) and (iii)
+    - (i), (ii), and (iii)
+
+    **Q6.** Which of the following options will validate whether n is a perfect square or not?
+    *(Where n is a positive integer)*
+
+    ```python
+    def f(n):
+        return (n ** 0.5) == int(n ** 0.5)
+
+    def g(n):
+        return (n ** 0.5) == int(n) * 0.5
+
+    def h(n):
+        for i in range(1, n + 1):
+            if i * i == n:
+                return True
+        return False
+
+    def k(n):
+        for i in range(1, n + 1):
+            if i * i > n:
+                break
+            elif i * i == n:
+                return True
+        return False
+    ```
+**User's Question:** {input}
+**Answer:** {context}
+""")
+
+learning_prompt = ChatPromptTemplate.from_template("""
+**Learning Question Handling Instructions:**
+   If the user’s query does not match any of the above graded or practice question categories, proceed with providing detailed explanations and responses. If the query is related to a **graded question**, **do not provide any output**.
+
+**General Query Handling:**  
+   - If the User’s query is related to one of the **graded questions**, do **not** provide any hints or solutions.
+   - If the User’s query is related to one of the **practice questions**, provide **hints** to guide the user.
+   - If the User’s query is not related to any restricted questions, retrieve information from the RAG system first, then summarize the relevant context in a concise manner (about 200 words). If no relevant information is available, do not generate any output.
+Return response in markdown format.
+**User's Question:** {input}
+**Answer:** {context}
+""")
+
+# Persistent storage paths
+FAISS_INDEX_DIR = "./faiss_index"
+CHAT_HISTORY_FILE = "chat_history.json"
+PDF_DIR = "./pdf_files"
 
 # -------------------------------
 # Persistent FAISS Vector Store Setup
 # -------------------------------
 def build_vector_store():
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    loader = PyPDFDirectoryLoader("./pdf_files")  # Load PDFs from this folder
-    docs = loader.load()  # Document loading
+    loader = PyPDFDirectoryLoader(PDF_DIR)
+    docs = loader.load()
 
     # Attach metadata: PDF name and page/slide number
     for doc in docs:
-        doc.metadata["source"] = doc.metadata.get("source", "Unknown PDF")
+        doc.metadata["source"] = os.path.basename(doc.metadata.get("source", "Unknown PDF"))
         doc.metadata["page"] = doc.metadata.get("page", "Unknown Page")
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    final_docs = text_splitter.split_documents(docs[:20])
-    vectors = FAISS.from_documents(final_docs, embeddings)
-    return vectors, embeddings
 
-# Directory where the FAISS vector store is saved
-FAISS_INDEX_DIR = "./faiss_index"
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    final_docs = text_splitter.split_documents(docs)
+
+    vectors = FAISS.from_documents(final_docs, embeddings)
+    vectors.save_local(FAISS_INDEX_DIR)
+    return vectors
+
 if os.path.exists(FAISS_INDEX_DIR):
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    # Set allow_dangerous_deserialization=True only if you trust the persisted file
     vector_store = FAISS.load_local(FAISS_INDEX_DIR, embeddings, allow_dangerous_deserialization=True)
 else:
-    vector_store, embeddings = build_vector_store()
-    vector_store.save_local(FAISS_INDEX_DIR)
-
-# -------------------------------
-# Persistent Chat History Setup
-# -------------------------------
-CHAT_HISTORY_FILE = "chat_history.json"
-
-def load_chat_history():
-    if os.path.exists(CHAT_HISTORY_FILE):
-        with open(CHAT_HISTORY_FILE, "r") as f:
-            try:
-                history = json.load(f)
-            except json.JSONDecodeError:
-                history = []
-    else:
-        history = []
-    return history
-
-def save_chat_history(history):
-    with open(CHAT_HISTORY_FILE, "w") as f:
-        json.dump(history, f)
-
-def clear_chat_history():
-    if os.path.exists(CHAT_HISTORY_FILE):
-        os.remove(CHAT_HISTORY_FILE)
+    vector_store = build_vector_store()
 
 # -------------------------------
 # Data Model for API Requests
 # -------------------------------
 class QueryRequest(BaseModel):
     query: str
+    history: list
+
+class ClearChatRequest(BaseModel):
+    action: str
 
 # -------------------------------
 # API Endpoints
 # -------------------------------
+
 @app.post("/ask")
 def ask(query_request: QueryRequest):
     user_query = query_request.query.strip()
+    history = query_request.history
+
     if not user_query:
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
-    history = load_chat_history()
 
-    # Check if the query is for summarization
-    if "summarize" in user_query.lower():
-        if not history:
-            return {"response": "No chat history available."}
-        conversation = ""
-        # For summarization, consider all available interactions
-        for chat in history:
-            conversation += f"User: {chat['query']}\nAlfred: {chat['answer']}\n"
-        summarization_prompt = (
-            "You are Alfred, a summarization assistant. "
-            "Please summarize the following conversation history in concise bullet points:\n\n"
-            + conversation +
-            "\nSummary:"
-        )
-        summary_response = llm.invoke(summarization_prompt)
-        summary_text = summary_response.content  # Use .content to extract text
-        return {"response": summary_text}
+    # Combine chat history into context
+    combined_history = "\n".join([f"User: {entry['query']}\nAlfred: {entry['answer']}" for entry in history])
 
-    # Otherwise, process a normal query or a follow-up conversation
-    if len(history) > 0:
-        # Include prior conversation context if present
-        context = "\n".join([f"User: {chat['query']}\nAlfred: {chat['answer']}" for chat in history])
-        context += f"\nUser: {user_query}"
-        retrieval_prompt = f"Based on this conversation:\n\n{context}\n\nProvide a response:"
-        response_obj = llm.invoke(retrieval_prompt)
-        response_text = response_obj.content
-    else:
-        # No prior context: use document-based retrieval
-        document_chain = create_stuff_documents_chain(llm, prompt)
-        retriever = vector_store.as_retriever()
+    # Retrieve top 5 relevant document chunks for the query from FAISS database
+    retriever = vector_store.as_retriever(search_kwargs={"k": 5})
+    retrieved_docs = retriever.invoke(user_query)
+
+    if len(retrieved_docs) > 0:
+        combined_contexts_with_pages = [
+            f"(Page {doc.metadata.get('page', 'Unknown Page')}) {doc.page_content}"
+            for doc in retrieved_docs
+        ]
+        combined_contexts_for_prompt = "\n\n".join(combined_contexts_with_pages)
+
+        # Combine history and retrieved context
+        full_context = f"{combined_history}\n\n{combined_contexts_for_prompt}"
+
+        # Create prompt and invoke LLM with combined context
+        document_chain = create_stuff_documents_chain(llm, learning_prompt)
         retrieval_chain = create_retrieval_chain(retriever, document_chain)
-        start_time = time.process_time()
-        response = retrieval_chain.invoke({"input": user_query})
-        elapsed_time = time.process_time() - start_time
-        response_text = response.get("answer", "")
-        # Optionally, you can include the response time in the response
-        # response_text = f"(Response Time: {elapsed_time:.2f} seconds) " + response_text
 
-    # Append this conversation to chat history and save it persistently
-    history.append({"query": user_query, "answer": response_text})
-    save_chat_history(history)
+        response = retrieval_chain.invoke({
+            "input": user_query,
+            "context": full_context,
+        })
+
+        return {"response": response["answer"]}
     
-    return {"response": response_text}
+    else:
+        # If no relevant documents are found in FAISS, call LLM directly with history
+        full_context = combined_history
+        direct_prompt = f"{full_context}\n\nUser: {user_query}\nAlfred:"
+        response_from_llm = llm.invoke({"input": direct_prompt})
+        
+        return {"response": response_from_llm.content}
 
-@app.post("/clear")
-def clear():
-    clear_chat_history()
-    return {"message": "Chat history cleared. You can start a new conversation."}
+
+@app.get("/pdfs")
+def get_pdf_list():
+    all_docs = vector_store.docstore._dict.values()
+    pdf_names = set(doc.metadata.get("source", "Unknown PDF") for doc in all_docs)
+    
+    return {"pdfs": list(pdf_names)}
