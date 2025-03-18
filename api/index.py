@@ -204,6 +204,7 @@ else:
 class QueryRequest(BaseModel):
     query: str
     history: list
+    prompt_option: str
 
 class ClearChatRequest(BaseModel):
     action: str
@@ -216,6 +217,7 @@ class ClearChatRequest(BaseModel):
 def ask(query_request: QueryRequest):
     user_query = query_request.query.strip()
     history = query_request.history
+    prompt_option = query_request.prompt_option.strip()
 
     if not user_query:
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
@@ -226,6 +228,15 @@ def ask(query_request: QueryRequest):
     # Retrieve top 5 relevant document chunks for the query from FAISS database
     retriever = vector_store.as_retriever(search_kwargs={"k": 5})
     retrieved_docs = retriever.invoke(user_query)
+    def get_prompt_type(prompt_option):
+        prompt_type=''
+        if (prompt_option == 'Graded Question'):
+            prompt_type = graded_prompt
+        elif(prompt_option == 'Practice Question'):
+            prompt_type = practice_prompt
+        else:
+            prompt_type = learning_prompt
+        return prompt_type
 
     if len(retrieved_docs) > 0:
         combined_contexts_with_pages = [
@@ -238,7 +249,7 @@ def ask(query_request: QueryRequest):
         full_context = f"{combined_history}\n\n{combined_contexts_for_prompt}"
 
         # Create prompt and invoke LLM with combined context
-        document_chain = create_stuff_documents_chain(llm, learning_prompt)
+        document_chain = create_stuff_documents_chain(llm, get_prompt_type(prompt_option))
         retrieval_chain = create_retrieval_chain(retriever, document_chain)
 
         response = retrieval_chain.invoke({
