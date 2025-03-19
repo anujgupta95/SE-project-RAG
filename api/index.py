@@ -39,6 +39,7 @@ llm = ChatGroq(groq_api_key=groq_api_key, model_name="llama-3.3-70b-versatile")
 graded_prompt = ChatPromptTemplate.from_template("""
 **Graded Question Handling Instructions:**
 - If the User's query is closely related to any of the following graded questions, do not give solution just say its a restricted question.
+ - If the query is unrelated to your course material or no matching data exists in the RAG system, do not provide any output.
 
     **Q1.** Which of the following may not be an appropriate choice of loss function for regression?  
     i. L(y,f(x)) = (y - f(x))^2  
@@ -79,14 +80,22 @@ graded_prompt = ChatPromptTemplate.from_template("""
     iii. Total number of letters that are repeated in the string S more than one time  
     iv. Difference of total letters in the string S and distinct letters in the string S
 
-- If the query is unrelated to a graded question, retrieve information from RAG and provide a concise summary (200 words max).
+
+You are 'Alfred', a friendly and knowledgeable assistant.
+Answer the following question using the provided context.
+Keep the answer brief, but ensure you cover all the essential aspects.
+If it is Machine Learning related, aim for 300-400 words;
+if it is a Python question, aim for 500-600 words.
+Mention the important points in bullets or highlight them.
+Include relevant google links if applicable.
+If the question is not relevant to the content, answer in 2 lines.- If the query is unrelated to a graded question, retrieve information from RAG and provide a concise summary (200 words max).
 **User's Question:** {input}
 **Answer:** {context}
 """)
 
 practice_prompt = ChatPromptTemplate.from_template("""
 **Practice Question Handling Instructions:**
-
+ - If the query is unrelated to your course material or no matching data exists in the RAG system, do not provide any output.
 If the User's query is closely related to any of the following practise questions, do not give a direct solution, just give some hints on how to answer the question:
 
     **Q1.** Which of the following are examples of unsupervised learning problems?
@@ -150,6 +159,14 @@ If the User's query is closely related to any of the following practise question
                 return True
         return False
     ```
+You are 'Alfred', a friendly and knowledgeable assistant.
+Answer the following question using the provided context.
+Keep the answer brief, but ensure you cover all the essential aspects.
+If it is Machine Learning related, aim for 300-400 words;
+if it is a Python question, aim for 500-600 words.
+Mention the important points in bullets or highlight them.
+Include relevant google links if applicable.
+If the question is not relevant to the content, answer in 2 lines.
 **User's Question:** {input}
 **Answer:** {context}
 """)
@@ -160,8 +177,30 @@ learning_prompt = ChatPromptTemplate.from_template("""
    - If no relevant information is found in the RAG database, politely respond:  
      _"I'm sorry, but this query doesn't appear to be related to your course material."_  
    - If the query is unrelated to your course material or no matching data exists in the RAG system, do not provide any output.
-
+You are 'Alfred', a friendly and knowledgeable assistant.
+Answer the following question using the provided context.
+Keep the answer brief, but ensure you cover all the essential aspects.
+If it is Machine Learning related, aim for 300-400 words;
+if it is a Python question, aim for 500-600 words.
+Mention the important points in bullets or highlight them.
+Include relevant google links if applicable.
+If the question is not relevant to the content, answer in 2 lines.
 **User's Question:** {input}  
+**Answer:** {context}
+""")
+
+programming_prompt = ChatPromptTemplate.from_template("""
+**Programming Question Handling Instructions:**
+   -You will provide 2 lines hint to the user code. Strictly not more than 2 line.
+You are 'Alfred', a friendly and knowledgeable assistant.
+Answer the following question using the provided context.
+Keep the answer brief, but ensure you cover all the essential aspects.
+If it is Machine Learning related, aim for 300-400 words;
+if it is a Python question, aim for 500-600 words.
+Mention the important points in bullets or highlight them.
+Include relevant google links if applicable.
+If the question is not relevant to the content, answer in 2 lines.
+**User's Code:** {input}  
 **Answer:** {context}
 """)
 
