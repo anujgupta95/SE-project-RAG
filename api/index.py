@@ -156,14 +156,12 @@ If the User's query is closely related to any of the following practise question
 
 learning_prompt = ChatPromptTemplate.from_template("""
 **Learning Question Handling Instructions:**
-   If the user’s query does not match any of the above graded or practice question categories, proceed with providing detailed explanations and responses. If the query is related to a **graded question**, **do not provide any output**.
+   - If the user’s query relates to content available in the RAG database, retrieve the relevant information and summarize it in approximately 200 words.  
+   - If no relevant information is found in the RAG database, politely respond:  
+     _"I'm sorry, but this query doesn't appear to be related to your course material."_  
+   - If the query is unrelated to your course material or no matching data exists in the RAG system, do not provide any output.
 
-**General Query Handling:**  
-   - If the User’s query is related to one of the **graded questions**, do **not** provide any hints or solutions.
-   - If the User’s query is related to one of the **practice questions**, provide **hints** to guide the user.
-   - If the User’s query is not related to any restricted questions, retrieve information from the RAG system first, then summarize the relevant context in a concise manner (about 200 words). If no relevant information is available, do not generate any output.
-Return response in markdown format.
-**User's Question:** {input}
+**User's Question:** {input}  
 **Answer:** {context}
 """)
 
