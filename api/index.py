@@ -162,7 +162,7 @@ If the User's query is closely related to any of the following practise question
                 return True
         return False
     ```
-You are 'Alfred', a friendly and knowledgeable assistant.
+- You are 'Alfred', a friendly and knowledgeable assistant.
 Answer the following question using the provided context.
 Keep the answer brief, but ensure you cover all the essential aspects.
 If it is Machine Learning related, aim for 300-400 words;
@@ -180,14 +180,15 @@ learning_prompt = ChatPromptTemplate.from_template("""
    - If no relevant information is found in the RAG database, politely respond:  
      _"I'm sorry, but this query doesn't appear to be related to your course material."_  
    - If the query is unrelated to your course material or no matching data exists in the RAG system, do not provide any output.
-You are 'Alfred', a friendly and knowledgeable assistant.
-Answer the following question using the provided context.
-Keep the answer brief, but ensure you cover all the essential aspects.
-If it is Machine Learning related, aim for 300-400 words;
-if it is a Python question, aim for 500-600 words.
-Mention the important points in bullets or highlight them.
-Include relevant google links if applicable.
-If the question is not relevant to the content, answer in 2 lines.
+   
+- You are 'Alfred', a friendly and knowledgeable assistant.
+- Answer the following question using the provided context.
+- Keep the answer brief, but ensure you cover all the essential aspects.
+- If it is Machine Learning related, aim for 300-400 words;
+- if it is a Python question, aim for 500-600 words.
+- Mention the important points in bullets or highlight them.
+- Include relevant google links if applicable.
+- If the question is not relevant to the content, answer in 2 lines.
 **User's Question:** {input}  
 **Answer:** {context}
 """)
@@ -195,14 +196,16 @@ If the question is not relevant to the content, answer in 2 lines.
 programming_prompt = ChatPromptTemplate.from_template("""
 **Programming Question Handling Instructions:**
    -You will provide 2 lines hint to the user code. Strictly not more than 2 line.
-You are 'Alfred', a friendly and knowledgeable assistant.
-Answer the following question using the provided context.
-Keep the answer brief, but ensure you cover all the essential aspects.
-If it is Machine Learning related, aim for 300-400 words;
-if it is a Python question, aim for 500-600 words.
-Mention the important points in bullets or highlight them.
-Include relevant google links if applicable.
-If the question is not relevant to the content, answer in 2 lines.
+
+- You are 'Alfred', a friendly and knowledgeable assistant.
+- Answer the following question using the provided context.
+- Keep the answer brief, but ensure you cover all the essential aspects.
+- If it is Machine Learning related, aim for 300-400 words;
+- if it is a Python question, aim for 500-600 words.
+- Mention the important points in bullets or highlight them.
+- Include relevant google links if applicable.
+- If the question is not relevant to the content, answer in 2 lines.
+
 **User's Code:** {input}  
 **Answer:** {context}
 """)
