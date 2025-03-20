@@ -172,10 +172,12 @@ learning_prompt = ChatPromptTemplate.from_template("""
 - if it is a Python question, aim for 500-600 words.
 - Mention the important points in bullets or highlight them.
 - Include relevant google links if applicable.
-- If the question is not relevant to the content, answer in 2 lines.
+- If the question is not relevant to the content, provide a warm and friendly response such as:
+   _"Hello! How can I assist you today?"_
 **User's Question:** {input}  
 **Answer:** {context}
 """)
+
 
 programming_prompt = ChatPromptTemplate.from_template("""
 **Programming Question Handling Instructions:**
