@@ -37,9 +37,12 @@ app.add_middleware(
 llm = ChatGroq(groq_api_key=groq_api_key, model_name="llama-3.3-70b-versatile")
 
 graded_prompt = ChatPromptTemplate.from_template("""
+- You are 'Alfred', a friendly and knowledgeable assistant.
+- Mention the important points in bullets or highlight them.
+
 **Graded Question Handling Instructions:**
 - If the User's query is closely related to any of the following graded questions, do not give solution just say its a restricted question.
- - If the query is unrelated to your course material or no matching data exists in the RAG system, do not provide any output.
+- If the query is unrelated to your course material or no matching data exists in the RAG system, do not provide any output.
 
     **Q1.** Which of the following may not be an appropriate choice of loss function for regression?  
     i. L(y,f(x)) = (y - f(x))^2  
@@ -81,23 +84,21 @@ graded_prompt = ChatPromptTemplate.from_template("""
     iv. Difference of total letters in the string S and distinct letters in the string S
 
 
-You are 'Alfred', a friendly and knowledgeable assistant.
-Answer the following question using the provided context.
-Keep the answer brief, but ensure you cover all the essential aspects.
-If it is Machine Learning related, aim for 300-400 words;
-if it is a Python question, aim for 500-600 words.
-Mention the important points in bullets or highlight them.
-Include relevant google links if applicable.
-If the question is not relevant to the content, answer in 2 lines.- If the query is unrelated to a graded question, retrieve information from RAG and provide a concise summary (200 words max).
+
 **User's Question:** {input}
 **Answer:** {context}
 """)
 
 practice_prompt = ChatPromptTemplate.from_template("""
-**Practice Question Handling Instructions:**
- - If the query is unrelated to your course material or no matching data exists in the RAG system, do not provide any output.
-If the User's query is closely related to any of the following practise questions, do not give a direct solution, just give some hints on how to answer the question:
 
+**Practice Question Handling Instructions:**
+ - You are 'Alfred', a friendly and knowledgeable assistant.
+ - Answer the following question using the provided context.
+ - Mention the important points in bullets or highlight them.
+ - Include relevant google links if applicable in a separate line(Please provide clickable links and highlight it).
+ - If the query is not related to our course material or no matching data exists in the RAG database, do not provide any output.
+ - If the User's query is closely related to any of the following practise questions, do not give a direct solution, just give some hints on how to answer the question:
+ 
     **Q1.** Which of the following are examples of unsupervised learning problems?
     - Grouping tweets based on topic similarity
     - Making clusters of cells having similar appearance under a microscope
@@ -159,32 +160,19 @@ If the User's query is closely related to any of the following practise question
                 return True
         return False
     ```
-You are 'Alfred', a friendly and knowledgeable assistant.
-Answer the following question using the provided context.
-Keep the answer brief, but ensure you cover all the essential aspects.
-If it is Machine Learning related, aim for 300-400 words;
-if it is a Python question, aim for 500-600 words.
-Mention the important points in bullets or highlight them.
-Include relevant google links if applicable.
-If the question is not relevant to the content, answer in 2 lines.
 **User's Question:** {input}
 **Answer:** {context}
 """)
 
 learning_prompt = ChatPromptTemplate.from_template("""
 **Learning Question Handling Instructions:**
-   - If the user’s query relates to content available in the RAG database, retrieve the relevant information and summarize it in approximately 200 words.  
-   - If no relevant information is found in the RAG database, politely respond:  
-     _"I'm sorry, but this query doesn't appear to be related to your course material."_  
-   - If the query is unrelated to your course material or no matching data exists in the RAG system, do not provide any output.
-You are 'Alfred', a friendly and knowledgeable assistant.
-Answer the following question using the provided context.
-Keep the answer brief, but ensure you cover all the essential aspects.
-If it is Machine Learning related, aim for 300-400 words;
-if it is a Python question, aim for 500-600 words.
-Mention the important points in bullets or highlight them.
-Include relevant google links if applicable.
-If the question is not relevant to the content, answer in 2 lines.
+- You are 'Alfred', a friendly and knowledgeable assistant.
+- Answer the following question using the provided context.
+- Mention the important points in bullets or highlight them.
+- Include relevant google links if applicable in a separate line(Please provide clickable links and highlight it).
+- If the question is not relevant to the content, and answer in 2 lines not more than that, provide a warm and friendly response such as:
+    _"Hello! How can I assist you today?"_
+- If the user’s query relates to content available in the RAG database, retrieve the relevant information and summarize it in approximately 200 words.  
 **User's Question:** {input}  
 **Answer:** {context}
 """)
@@ -237,6 +225,7 @@ else:
 class QueryRequest(BaseModel):
     query: str
     history: list
+    prompt_option: str
 
 class DebugCodeRequest(BaseModel):
     question: str  # User's debugging question (e.g., "What is wrong with this code?")
@@ -259,7 +248,9 @@ def debug_code(request: DebugCodeRequest):
 
     # Create prompt for debugging code and invoke LLM
     prompt_input = debug_prompt.format(question=user_question, code=user_code)
-    response_from_llm = llm.invoke({"input": prompt_input})
+    
+    # Pass the prompt directly as a string to llm.invoke()
+    response_from_llm = llm.invoke(prompt_input)
 
     return {"response": response_from_llm.content}
 
@@ -267,6 +258,7 @@ def debug_code(request: DebugCodeRequest):
 def ask(query_request: QueryRequest):
     user_query = query_request.query.strip()
     history = query_request.history
+    prompt_option = query_request.prompt_option.strip()
 
     if not user_query:
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
@@ -277,6 +269,15 @@ def ask(query_request: QueryRequest):
     # Retrieve top 5 relevant document chunks for the query from FAISS database
     retriever = vector_store.as_retriever(search_kwargs={"k": 5})
     retrieved_docs = retriever.invoke(user_query)
+    def get_prompt_type(prompt_option):
+        prompt_type=''
+        if (prompt_option == 'graded'):
+            prompt_type = graded_prompt
+        elif(prompt_option == 'practice'):
+            prompt_type = practice_prompt
+        else:
+            prompt_type = learning_prompt
+        return prompt_type
 
     if len(retrieved_docs) > 0:
         combined_contexts_with_pages = [
@@ -288,8 +289,8 @@ def ask(query_request: QueryRequest):
         # Combine history and retrieved context
         full_context = f"{combined_history}\n\n{combined_contexts_for_prompt}"
 
-        # Create prompt and invoke LLM with combined context from all relevant documents including pages
-        document_chain = create_stuff_documents_chain(llm, learning_prompt)
+        # Create prompt and invoke LLM with combined context
+        document_chain = create_stuff_documents_chain(llm, get_prompt_type(prompt_option))
         retrieval_chain = create_retrieval_chain(retriever, document_chain)
 
         response = retrieval_chain.invoke({
@@ -307,18 +308,10 @@ def ask(query_request: QueryRequest):
         
         return {"response": response_from_llm.content}
 
+
 @app.get("/pdfs")
 def get_pdf_list():
     all_docs = vector_store.docstore._dict.values()
     pdf_names = set(doc.metadata.get("source", "Unknown PDF") for doc in all_docs)
     
     return {"pdfs": list(pdf_names)}
-
-@app.post("/clear")
-def clear_chat(request: ClearChatRequest):
-    if request.action.lower() == "clear":
-        if os.path.exists(CHAT_HISTORY_FILE):
-            os.remove(CHAT_HISTORY_FILE)
-            return {"message": "Chat history cleared successfully."}
-        else:
-            return {"message": "No chat history found to clear."}
