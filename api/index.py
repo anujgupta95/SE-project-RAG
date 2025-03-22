@@ -38,6 +38,7 @@ llm = ChatGroq(groq_api_key=groq_api_key, model_name="llama-3.3-70b-versatile")
 
 graded_prompt = ChatPromptTemplate.from_template("""
 - You are 'Alfred', a friendly and knowledgeable assistant.
+- Mention the important points in bullets or highlight them.
 
 **Graded Question Handling Instructions:**
 - If the User's query is closely related to any of the following graded questions, do not give solution just say its a restricted question.
@@ -89,7 +90,12 @@ graded_prompt = ChatPromptTemplate.from_template("""
 """)
 
 practice_prompt = ChatPromptTemplate.from_template("""
+
 **Practice Question Handling Instructions:**
+ - You are 'Alfred', a friendly and knowledgeable assistant.
+ - Answer the following question using the provided context.
+ - Mention the important points in bullets or highlight them.
+ - Include relevant google links if applicable(Please provide clickable links in blue text font).
  - If the query is not related to our course material or no matching data exists in the RAG database, do not provide any output.
  - If the User's query is closely related to any of the following practise questions, do not give a direct solution, just give some hints on how to answer the question:
  
@@ -163,7 +169,7 @@ learning_prompt = ChatPromptTemplate.from_template("""
 - You are 'Alfred', a friendly and knowledgeable assistant.
 - Answer the following question using the provided context.
 - Mention the important points in bullets or highlight them.
-- Include relevant google links if applicable(Please provide clickable links).
+- Include relevant google links if applicable(Please provide clickable links c).
 - If the question is not relevant to the content, and answer in 2 lines not more than that, provide a warm and friendly response such as:
     _"Hello! How can I assist you today?"_
 - If the user’s query relates to content available in the RAG database, retrieve the relevant information and summarize it in approximately 200 words.  
