@@ -90,9 +90,9 @@ graded_prompt = ChatPromptTemplate.from_template("""
 
 practice_prompt = ChatPromptTemplate.from_template("""
 **Practice Question Handling Instructions:**
- - If the query is unrelated to your course material or no matching data exists in the RAG system, do not provide any output.
-If the User's query is closely related to any of the following practise questions, do not give a direct solution, just give some hints on how to answer the question:
-
+ - If the query is not related to our course material or no matching data exists in the RAG database, do not provide any output.
+ - If the User's query is closely related to any of the following practise questions, do not give a direct solution, just give some hints on how to answer the question:
+ 
     **Q1.** Which of the following are examples of unsupervised learning problems?
     - Grouping tweets based on topic similarity
     - Making clusters of cells having similar appearance under a microscope
