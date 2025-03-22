@@ -250,9 +250,9 @@ def ask(query_request: QueryRequest):
     retrieved_docs = retriever.invoke(user_query)
     def get_prompt_type(prompt_option):
         prompt_type=''
-        if (prompt_option == 'Graded Question'):
+        if (prompt_option == 'graded'):
             prompt_type = graded_prompt
-        elif(prompt_option == 'Practice Question'):
+        elif(prompt_option == 'practice'):
             prompt_type = practice_prompt
         else:
             prompt_type = learning_prompt
