@@ -237,6 +237,34 @@ class ClearChatRequest(BaseModel):
 # -------------------------------
 # API Endpoints
 # -------------------------------
+class QuestionsRequest(BaseModel):
+    questions: List[str]
+    
+@app.post("/top-questions")
+def get_top_questions(request: QuestionsRequest):
+ 
+    questions = request.questions
+    
+    if not questions:
+        raise HTTPException(status_code=400, detail="The 'questions' list cannot be empty.")
+
+    prompt_input = (
+        "Here is a list of questions asked by students. Some questions may be similar or related. "
+        "Please analyze the questions, group similar ones together, and return the top 5 most frequently asked questions. "
+        "For each question, include a count of how many times it or its similar variants were asked.\n\n"
+        "Questions:\n"
+        + "\n".join(f"- {question}" for question in questions)
+        + "\n\n"
+        "Format your response as follows:\n"
+        "1. [Question 1] (Count: X)\n"
+        "2. [Question 2] (Count: Y)\n"
+        "...\n"
+        "5. [Question 5] (Count: Z)"
+    )
+
+    response_from_llm = llm.invoke(prompt_input)
+    return {"response": response_from_llm.content}
+
 
 @app.post("/debug/code")
 def debug_code(request: DebugCodeRequest):
