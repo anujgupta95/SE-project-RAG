@@ -234,12 +234,13 @@ class DebugCodeRequest(BaseModel):
 class ClearChatRequest(BaseModel):
     action: str
 
+class QuestionsRequest(BaseModel):
+    questions: list[str]
+
 # -------------------------------
 # API Endpoints
 # -------------------------------
-class QuestionsRequest(BaseModel):
-    questions: List[str]
-    
+
 @app.post("/top-questions")
 def get_top_questions(request: QuestionsRequest):
  
