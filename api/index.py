@@ -294,14 +294,23 @@ def ask(query_request: QueryRequest):
     # Combine chat history into context
     combined_history = "\n".join([f"User: {entry['query']}\nAlfred: {entry['answer']}" for entry in history])
 
+    # Handle "What was my last question?" explicitly
+    if user_query.lower() == "what was my last question?":
+        if len(history) > 0:
+            last_question = history[-1]["query"]
+            return {"response": f"Your last question was: '{last_question}'", "updated_history": history}
+        else:
+            return {"response": "I don't have any record of your previous question.", "updated_history": history}
+
     # Retrieve top 5 relevant document chunks for the query from FAISS database
     retriever = vector_store.as_retriever(search_kwargs={"k": 5})
     retrieved_docs = retriever.invoke(user_query)
+
     def get_prompt_type(prompt_option):
-        prompt_type=''
-        if (prompt_option == 'graded'):
+        prompt_type = ''
+        if prompt_option == 'graded':
             prompt_type = graded_prompt
-        elif(prompt_option == 'practice'):
+        elif prompt_option == 'practice':
             prompt_type = practice_prompt
         else:
             prompt_type = learning_prompt
@@ -326,15 +335,21 @@ def ask(query_request: QueryRequest):
             "context": full_context,
         })
 
-        return {"response": response["answer"]}
+        # Append the current query and response to the history
+        history.append({"query": user_query, "answer": response["answer"]})
+
+        return {"response": response["answer"], "updated_history": history}
     
     else:
         # If no relevant documents are found in FAISS, call LLM directly with history
         full_context = combined_history
         direct_prompt = f"{full_context}\n\nUser: {user_query}\nAlfred:"
-        response_from_llm = llm.invoke({"input": direct_prompt})
-        
-        return {"response": response_from_llm.content}
+        response_from_llm = llm.invoke(direct_prompt)
+
+        # Append the current query and response to the history
+        history.append({"query": user_query, "answer": response_from_llm.content})
+
+        return {"response": response_from_llm.content, "updated_history": history}
 
 
 @app.get("/pdfs")
