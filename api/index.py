@@ -250,29 +250,20 @@ def get_top_questions(request: QuestionsRequest):
         raise HTTPException(status_code=400, detail="The 'questions' list cannot be empty.")
 
     prompt_input = (
-    "Analyze the following student questions and return the top 5 most frequently asked core questions in markdown format.\n\n"
-    "**Response Requirements:**\n"
-    "- Group questions by their essential meaning (ignore wording differences)\n"
-    "- Count occurrences of each core question\n"
-    "- List ONLY the top 5 most frequent questions\n"
-    "- If fewer than 5 questions were repeated, include single-occurrence questions to complete the list\n"
-    "- Return ONLY the markdown list, no explanations or examples\n\n"
-    "**Questions:**\n"
-    + "\n".join(f"- {question}" for question in questions)
-    + "\n\n"
-    "**Respond EXACTLY in this markdown format:**\n"
-    "```markdown\n"
-    "1. [Core question 1] - Count: X\n"
-    "2. [Core question 2] - Count: Y\n"
-    "3. [Core question 3] - Count: Z\n"
-    "4. [Core question 4] - Count: W\n"
-    "5. [Core question 5] - Count: V\n"
-    "```\n\n"
-    "**Important:**\n"
-    "- Do NOT include similar question examples\n"
-    "- Do NOT add any commentary or analysis\n"
-    "- Do NOT deviate from the specified format\n"
-    "- Use '-' instead of ':' after 'Count' for better markdown compatibility"
+    "Analyze these programming questions and return the top 5 most frequent topics. "
+    "Respond with ONLY a Python list literal containing exactly 5 unquoted items separated by commas, "
+    "formatted exactly like this example: "
+    "[Python functions, Lists, Error handling, OOP, File handling] "
+    "STRICT REQUIREMENTS: "
+    "1. No quotation marks of any kind "
+    "2. No backslashes or escape characters "
+    "3. No counts or numbering "
+    "4. No additional text or commentary "
+    "5. Exactly 5 comma-separated items between square brackets "
+    "6. Each topic must be 2-4 words in lowercase/uppercase "
+    "If you include any quotes, backslashes, or other formatting, the response is wrong.\n\n"
+    "QUESTIONS:\n" +
+    "\n".join(f"- {question}" for question in questions)
 )
     response_from_llm = llm.invoke(prompt_input)
     return {"response": response_from_llm.content}
