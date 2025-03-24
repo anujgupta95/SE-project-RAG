@@ -250,19 +250,30 @@ def get_top_questions(request: QuestionsRequest):
         raise HTTPException(status_code=400, detail="The 'questions' list cannot be empty.")
 
     prompt_input = (
-        "Here is a list of questions asked by students. Some questions may be similar or related. "
-        "Please analyze the questions, group similar ones together, and return the top 5 most frequently asked questions. "
-        "For each question, include a count of how many times it or its similar variants were asked.\n\n"
-        "Questions:\n"
-        + "\n".join(f"- {question}" for question in questions)
-        + "\n\n"
-        "Format your response as follows:\n"
-        "1. [Question 1] (Count: X)\n"
-        "2. [Question 2] (Count: Y)\n"
-        "...\n"
-        "5. [Question 5] (Count: Z)"
-    )
-
+    "Analyze the following student questions and return the top 5 most frequently asked core questions in markdown format.\n\n"
+    "**Response Requirements:**\n"
+    "- Group questions by their essential meaning (ignore wording differences)\n"
+    "- Count occurrences of each core question\n"
+    "- List ONLY the top 5 most frequent questions\n"
+    "- If fewer than 5 questions were repeated, include single-occurrence questions to complete the list\n"
+    "- Return ONLY the markdown list, no explanations or examples\n\n"
+    "**Questions:**\n"
+    + "\n".join(f"- {question}" for question in questions)
+    + "\n\n"
+    "**Respond EXACTLY in this markdown format:**\n"
+    "```markdown\n"
+    "1. [Core question 1] - Count: X\n"
+    "2. [Core question 2] - Count: Y\n"
+    "3. [Core question 3] - Count: Z\n"
+    "4. [Core question 4] - Count: W\n"
+    "5. [Core question 5] - Count: V\n"
+    "```\n\n"
+    "**Important:**\n"
+    "- Do NOT include similar question examples\n"
+    "- Do NOT add any commentary or analysis\n"
+    "- Do NOT deviate from the specified format\n"
+    "- Use '-' instead of ':' after 'Count' for better markdown compatibility"
+)
     response_from_llm = llm.invoke(prompt_input)
     return {"response": response_from_llm.content}
 
