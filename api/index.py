@@ -34,7 +34,7 @@ app.add_middleware(
 
 
 # Initialize the LLM (ChatGroq in this case)
-llm = ChatGroq(groq_api_key=groq_api_key, model_name="llama-3.3-70b-versatile")
+llm = ChatGroq(groq_api_key=groq_api_key, model_name="llama-guard-3-8b")
 
 graded_prompt = ChatPromptTemplate.from_template("""
 - You are 'Alfred', a friendly and knowledgeable assistant.
