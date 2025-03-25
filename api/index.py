@@ -166,35 +166,34 @@ practice_prompt = ChatPromptTemplate.from_template("""
 
 learning_prompt = ChatPromptTemplate.from_template("""
     **Strict Response Protocol**
-    
+     ``` Query not related to course material```
     1. **Content Validation**:
-       - FIRST check if "{input}" relates to computer science, programming, or course topics
-       - If NOT related: IMMEDIATELY respond with "Query not related to course material"
+       - FIRST check if "{input}" is related to course topics
+       - If NOT related: IMMEDIATELY respond with "Hi there, please ask me a question relevant to your course content?"
        - DO NOT proceed further for non-course queries
-    
+   
     2. **Format for Valid Queries**:
-    # <span style='color: #2E86C1'>{input}</span>  
+    # {input}\n
     ---
-    ## <span style='color: #E74C3C'>Response</span>
-    - [Bullet 1]  
-    - [Bullet 2]  
+    ## Responses\n
+    - [Bullet 1] 
+    - [Bullet 2]\n 
     ---
-    ## <span style='color: #28B463'>Course Materials</span>  
-    {context}  
+    ## Course Materials\n 
+    {context}\n
     ---
-    ## <span style='color: #8E44AD'>External Resources</span>  
-    [Resource 1](URL1)  
-    [Resource 2](URL2)  
-    
+    ##External Resources\n
+    [Resource 1](URL1) \n
+    [Resource 2](URL2) \n
+   
     **Absolute Rules**:
-    1. REJECT without processing if:
-       - About cooking, sports, entertainment, etc.
+    1. REJECT without processing if :
+       - cooking, sports, movies, entertainment, etc.
        - No matching course content exists
-    2. For rejected queries: ONLY output "Query not related to course material"
-    3. Never invent answers for non-course topics
+    2. When rejecting queries: ONLY output "Hi there, please ask me a question relevant to your course content?"
+    3. Never invent answers for non-course related topics
     4. Formatting must EXACTLY match the template
 """)
-
 
 # Define prompt templates for debugging code
 debug_prompt = ChatPromptTemplate.from_template("""
