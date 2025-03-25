@@ -14,6 +14,8 @@ from langchain.chains.retrieval import create_retrieval_chain
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_groq import ChatGroq
 from fastapi.middleware.cors import CORSMiddleware
+import numpy as np
+import pandas as pd
 
 # Load environment variables
 load_dotenv()
@@ -297,9 +299,40 @@ def ask(query_request: QueryRequest):
     # Combine chat history into context
     combined_history = "\n".join([f"User: {entry['query']}\nAlfred: {entry['answer']}" for entry in history])
 
-    # Retrieve top 5 relevant document chunks for the query from FAISS database
-    retriever = vector_store.as_retriever(search_kwargs={"k": 5})
-    retrieved_docs = retriever.invoke(user_query)
+    # Embed the user query
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    query_embedding = embeddings.embed_query(user_query)
+
+    # Retrieve all document embeddings from FAISS
+    retriever = vector_store.as_retriever(search_kwargs={"k": 100})  # Retrieve all documents for comparison
+    all_docs = retriever.invoke(user_query)
+
+    if len(all_docs) == 0:
+        # If no documents are found, return a friendly response
+        friendly_response = "Hello! This is not part of our course content, can I help you with anything else?"
+        history.append({"query": user_query, "answer": friendly_response})
+        return {"response": friendly_response, "updated_history": history}
+
+    # Calculate cosine similarity between query and document embeddings
+    def cosine_similarity(vec1, vec2):
+        return np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
+
+    scored_docs = []
+    for doc in all_docs:
+        doc_embedding = doc.embedding  # Retrieve the embedding of the document
+        score = cosine_similarity(query_embedding, doc_embedding)
+        scored_docs.append((score, doc))
+
+    # Sort documents by similarity score in descending order
+    scored_docs = sorted(scored_docs, key=lambda x: x[0], reverse=True)
+
+    # Select top 5 most relevant documents based on cosine similarity
+    top_docs = scored_docs[:5]
+    combined_contexts_with_pages = [
+        f"(Page {doc.metadata.get('page', 'Unknown Page')}) {doc.page_content}"
+        for _, doc in top_docs
+    ]
+    combined_contexts_for_prompt = "\n\n".join(combined_contexts_with_pages)
 
     def get_prompt_type(prompt_option):
         prompt_type = ''
@@ -311,39 +344,22 @@ def ask(query_request: QueryRequest):
             prompt_type = learning_prompt
         return prompt_type
 
-    # Check if any relevant documents were retrieved
-    if len(retrieved_docs) > 0:
-        combined_contexts_with_pages = [
-            f"(Page {doc.metadata.get('page', 'Unknown Page')}) {doc.page_content}"
-            for doc in retrieved_docs
-        ]
-        combined_contexts_for_prompt = "\n\n".join(combined_contexts_with_pages)
+    # Combine history and retrieved context
+    full_context = f"{combined_history}\n\n{combined_contexts_for_prompt}"
 
-        # Combine history and retrieved context
-        full_context = f"{combined_history}\n\n{combined_contexts_for_prompt}"
+    # Create prompt and invoke LLM with combined context
+    document_chain = create_stuff_documents_chain(llm, get_prompt_type(prompt_option))
+    retrieval_chain = create_retrieval_chain(retriever, document_chain)
 
-        # Create prompt and invoke LLM with combined context
-        document_chain = create_stuff_documents_chain(llm, get_prompt_type(prompt_option))
-        retrieval_chain = create_retrieval_chain(retriever, document_chain)
+    response = retrieval_chain.invoke({
+        "input": user_query,
+        "context": full_context,
+    })
 
-        response = retrieval_chain.invoke({
-            "input": user_query,
-            "context": full_context,
-        })
+    # Append the current query and response to the history
+    history.append({"query": user_query, "answer": response["answer"]})
 
-        # Append the current query and response to the history
-        history.append({"query": user_query, "answer": response["answer"]})
-
-        return {"response": response["answer"], "updated_history": history}
-    
-    else:
-        # If no relevant documents are found in FAISS, return a predefined friendly response
-        friendly_response = "Hello! This is not part of our course content, can I help you with anything else?"
-        
-        # Append the current query and friendly response to the history
-        history.append({"query": user_query, "answer": friendly_response})
-
-        return {"response": friendly_response, "updated_history": history}
+    return {"response": response["answer"], "updated_history": history}
 
 
 @app.get("/pdfs")
