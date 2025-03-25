@@ -297,14 +297,6 @@ def ask(query_request: QueryRequest):
     # Combine chat history into context
     combined_history = "\n".join([f"User: {entry['query']}\nAlfred: {entry['answer']}" for entry in history])
 
-    # Handle "What was my last question?" explicitly
-    if user_query.lower() == "what was my last question?":
-        if len(history) > 0:
-            last_question = history[-1]["query"]
-            return {"response": f"Your last question was: '{last_question}'", "updated_history": history}
-        else:
-            return {"response": "I don't have any record of your previous question.", "updated_history": history}
-
     # Retrieve top 5 relevant document chunks for the query from FAISS database
     retriever = vector_store.as_retriever(search_kwargs={"k": 5})
     retrieved_docs = retriever.invoke(user_query)
@@ -319,6 +311,7 @@ def ask(query_request: QueryRequest):
             prompt_type = learning_prompt
         return prompt_type
 
+    # Check if any relevant documents were retrieved
     if len(retrieved_docs) > 0:
         combined_contexts_with_pages = [
             f"(Page {doc.metadata.get('page', 'Unknown Page')}) {doc.page_content}"
@@ -344,15 +337,13 @@ def ask(query_request: QueryRequest):
         return {"response": response["answer"], "updated_history": history}
     
     else:
-        # If no relevant documents are found in FAISS, call LLM directly with history
-        full_context = combined_history
-        direct_prompt = f"{full_context}\n\nUser: {user_query}\nAlfred:"
-        response_from_llm = llm.invoke(direct_prompt)
+        # If no relevant documents are found in FAISS, return a predefined friendly response
+        friendly_response = "Hello! This is not part of our course content, can I help you with anything else?"
+        
+        # Append the current query and friendly response to the history
+        history.append({"query": user_query, "answer": friendly_response})
 
-        # Append the current query and response to the history
-        history.append({"query": user_query, "answer": response_from_llm.content})
-
-        return {"response": response_from_llm.content, "updated_history": history}
+        return {"response": friendly_response, "updated_history": history}
 
 
 @app.get("/pdfs")
