@@ -307,6 +307,7 @@ def debug_code(request: DebugCodeRequest):
 def ask(query_request: QueryRequest):
     user_query = query_request.query.strip()
     history = query_request.history
+    print(history)
     prompt_option = query_request.prompt_option.strip()
 
     if not user_query:
