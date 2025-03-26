@@ -250,7 +250,7 @@ class QuestionsRequest(BaseModel):
 from langchain_core.messages import AIMessage
 
 # Modify your summarize_conversation function
-def summarize_conversation(history: List[Dict[str, str]], max_length: int = 5) -> str:
+def summarize_conversation(history: list[dict[str, str]], max_length: int = 5) -> str:
     if len(history) <= max_length:
         return "\n".join([f"User: {entry['query']}\nAlfred: {entry['answer']}" for entry in history])
     else:
