@@ -205,9 +205,7 @@ You are 'Alfred', a friendly and knowledgeable course assistant. Follow these in
 - Use bullet points/numbered lists where appropriate
 - Reference previous context: {context}
 - Current topic: {current_topic}
----
-## Course Materials
-[Include relevant course content excerpts]
+
 ---
 ## External Resources
 - [Resource 1](URL1)  
