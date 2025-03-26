@@ -39,38 +39,36 @@ app.add_middleware(
 llm = ChatGroq(groq_api_key=groq_api_key, model_name="llama-3.3-70b-versatile")
 
 graded_prompt = ChatPromptTemplate.from_template("""
-- You are 'Alfred', a friendly and knowledgeable assistant.
-- Mention the important points in bullets or highlight them.
+**You are 'Alfred', a friendly and knowledgeable assistant.**
 
 **Graded Question Handling Instructions:**
 - If the User's query is closely related to any of the following graded questions, do not give solution just say its a restricted question.
-- If the query is unrelated to your course material or no matching data exists in the RAG system, do not provide any output.
 
-    **Q1.** Which of the following may not be an appropriate choice of loss function for regression?  
+    Which of the following may not be an appropriate choice of loss function for regression?  
     i. L(y,f(x)) = (y - f(x))^2  
     ii. L(f(x), w)  
     iii. L(f(x), |w|)  
     iv. L(f(x), ∑wi)  
 
-    **Q2.** Identify which of the following requires the use of a classification technique:  
+    Identify which of the following requires the use of a classification technique:  
     i. Predicting the amount of rainfall in May 2022 in North India based on precipitation data of the year 2021  
     ii. Predicting the price of land based on its area and distance from the market  
     iii. Predicting whether an email is spam or not  
     iv. Predicting the number of Covid cases on a given day based on previous month data  
 
-    **Q3.** Which of the following functions is/are continuous?  
+    Which of the following functions is/are continuous?  
     i. 1/(x-1)  
     ii. (x^2 - 1)/(x - 1)  
     iii. sign(x - 2)  
     iv. sin(x)  
 
-    **Q4.** Regarding a d-dimensional vector x, which of the following four options is not equivalent to the rest?  
+    Regarding a d-dimensional vector x, which of the following four options is not equivalent to the rest?  
     i. x^T x  
     ii. ||x||^2  
     iii. ∑(xi^2)  
     iv. x x^T  
 
-    **Q5.** What will the following Python function return?  
+    What will the following Python function return?  
     ```python
     def fun(s):  
         p = 0  
@@ -85,7 +83,7 @@ graded_prompt = ChatPromptTemplate.from_template("""
     iii. Total number of letters that are repeated in the string S more than one time  
     iv. Difference of total letters in the string S and distinct letters in the string S
 
-
+- If the query is not related to your course material or no similar data found in the RAG database, do not provide any output.
 
 **User's Question:** {input}
 **Answer:** {context}
