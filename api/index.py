@@ -246,17 +246,30 @@ class QuestionsRequest(BaseModel):
 
 # Helper Functions for Follow-up/Conservational AI feature
 
-def summarize_conversation(history: list[dict[str, str]], max_length: int = 5) -> str:
+# Add this import at the top of your file
+from langchain_core.messages import AIMessage
+
+# Modify your summarize_conversation function
+def summarize_conversation(history: List[Dict[str, str]], max_length: int = 5) -> str:
     if len(history) <= max_length:
         return "\n".join([f"User: {entry['query']}\nAlfred: {entry['answer']}" for entry in history])
     else:
         summary = f"Summary of previous {len(history) - max_length} messages:\n"
         summary_prompt = f"Summarize this conversation:\n{json.dumps(history[:-max_length])}"
         summary_response = llm.invoke(summary_prompt)
-        summary += summary_response.content if isinstance(summary_response, AIMessage) else str(summary_response)
+        
+        # Handle different response types
+        if isinstance(summary_response, AIMessage):
+            summary += summary_response.content
+        elif hasattr(summary_response, 'content'):
+            summary += summary_response.content
+        else:
+            summary += str(summary_response)
+            
         summary += "\n\nRecent messages:\n"
         summary += "\n".join([f"User: {entry['query']}\nAlfred: {entry['answer']}" for entry in history[-max_length:]])
         return summary
+
 
 
 def get_topic(question: str) -> str:
