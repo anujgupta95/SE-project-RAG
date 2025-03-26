@@ -320,7 +320,7 @@ def get_topic(question: str) -> str:
     return "general"
 
 def is_follow_up_question(question: str) -> bool:
-    follow_up_phrases = ['you mentioned', 'earlier you said', 'previously', 'in relation to']
+    follow_up_phrases = ['you mentioned', 'earlier you said', 'previously', 'in relation to','so','and','ok','okay']
     return any(phrase in question.lower() for phrase in follow_up_phrases)
 
 
