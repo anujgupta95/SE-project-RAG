@@ -3,6 +3,8 @@ from pydantic import BaseModel
 import os
 import json
 from dotenv import load_dotenv
+from numpy as np
+import pandas as pd
 
 # LangChain imports
 from langchain_community.vectorstores import FAISS
