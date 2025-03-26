@@ -246,7 +246,7 @@ class QuestionsRequest(BaseModel):
 
 # Helper Functions for Follow-up/Conservational AI feature
 
-def summarize_conversation(history: List[Dict[str, str]], max_length: int = 5) -> str:
+def summarize_conversation(history: list[dict[str, str]], max_length: int = 5) -> str:
     if len(history) <= max_length:
         return "\n".join([f"User: {entry['query']}\nAlfred: {entry['answer']}" for entry in history])
     else:
