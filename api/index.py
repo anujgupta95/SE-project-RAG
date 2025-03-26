@@ -246,15 +246,18 @@ class QuestionsRequest(BaseModel):
 
 # Helper Functions for Follow-up/Conservational AI feature
 
-def summarize_conversation(history: list[dict[str, str]], max_length: int = 5) -> str:
+def summarize_conversation(history: List[Dict[str, str]], max_length: int = 5) -> str:
     if len(history) <= max_length:
         return "\n".join([f"User: {entry['query']}\nAlfred: {entry['answer']}" for entry in history])
     else:
         summary = f"Summary of previous {len(history) - max_length} messages:\n"
-        summary += llm.invoke(f"Summarize this conversation:\n{json.dumps(history[:-max_length])}")
+        summary_prompt = f"Summarize this conversation:\n{json.dumps(history[:-max_length])}"
+        summary_response = llm.invoke(summary_prompt)
+        summary += summary_response.content if isinstance(summary_response, AIMessage) else str(summary_response)
         summary += "\n\nRecent messages:\n"
         summary += "\n".join([f"User: {entry['query']}\nAlfred: {entry['answer']}" for entry in history[-max_length:]])
         return summary
+
 
 def get_topic(question: str) -> str:
     # Simple topic extraction (can be improved with NLP techniques)
@@ -317,69 +320,75 @@ def debug_code(request: DebugCodeRequest):
 
 @app.post("/ask")
 def ask(query_request: QueryRequest):
-    user_query = query_request.query.strip()
-    history = query_request.history[-10:]  # Keep last 10 interactions
-    prompt_option = query_request.prompt_option.strip()
+    try:
+        user_query = query_request.query.strip()
+        history = query_request.history[-10:]  # Keep last 10 interactions
+        prompt_option = query_request.prompt_option.strip()
 
-    if not user_query:
-        raise HTTPException(status_code=400, detail="Query cannot be empty.")
+        if not user_query:
+            raise HTTPException(status_code=400, detail="Query cannot be empty.")
 
-    # Combine chat history into context
-    combined_history = summarize_conversation(history)
+        # Combine chat history into context
+        combined_history = summarize_conversation(history)
 
-    # Handle "What was my last question?" and similar queries
-    if "last question" in user_query.lower():
-        if len(history) > 0:
-            last_question = history[-1]["query"]
-            last_topic = get_topic(last_question)
-            return {
-                "response": f"Your last question was about {last_topic}. You asked: '{last_question}'",
-                "updated_history": history
-            }
+        # Handle "What was my last question?" and similar queries
+        if "last question" in user_query.lower():
+            if len(history) > 0:
+                last_question = history[-1]["query"]
+                last_topic = get_topic(last_question)
+                return {
+                    "response": f"Your last question was about {last_topic}. You asked: '{last_question}'",
+                    "updated_history": history
+                }
+            else:
+                return {
+                    "response": "I don't have any record of your previous questions yet. Feel free to ask me anything about the course!",
+                    "updated_history": history
+                }
+
+        # Retrieve relevant document chunks
+        retriever = vector_store.as_retriever(search_kwargs={"k": 5})
+        retrieved_docs = retriever.invoke(user_query)
+
+        current_topic = get_topic(user_query)
+
+        if len(retrieved_docs) > 0:
+            combined_contexts = "\n\n".join([doc.page_content for doc in retrieved_docs])
+            full_context = f"{combined_history}\n\n{combined_contexts}"
+
+            # Create prompt and invoke LLM with combined context
+            document_chain = create_stuff_documents_chain(llm, learning_prompt)
+            retrieval_chain = create_retrieval_chain(retriever, document_chain)
+
+            response = retrieval_chain.invoke({
+                "input": user_query,
+                "context": full_context,
+                "current_topic": current_topic
+            })
+
+            # Handle follow-up questions
+            if is_follow_up_question(user_query):
+                response["answer"] = f"Regarding your previous question, {response['answer']}"
+
+            # Append the current query and response to the history
+            history.append({"query": user_query, "answer": response["answer"]})
+
+            return {"response": response["answer"], "updated_history": history}
+        
         else:
-            return {
-                "response": "I don't have any record of your previous questions yet. Feel free to ask me anything about the course!",
-                "updated_history": history
-            }
+            # If no relevant documents are found, use a more general response
+            direct_prompt = f"{combined_history}\n\nUser: {user_query}\nAlfred:"
+            response_from_llm = llm.invoke(direct_prompt)
 
-    # Retrieve relevant document chunks
-    retriever = vector_store.as_retriever(search_kwargs={"k": 5})
-    retrieved_docs = retriever.invoke(user_query)
+            # Append the current query and response to the history
+            history.append({"query": user_query, "answer": response_from_llm.content})
 
-    current_topic = get_topic(user_query)
-
-    if len(retrieved_docs) > 0:
-        combined_contexts = "\n\n".join([doc.page_content for doc in retrieved_docs])
-        full_context = f"{combined_history}\n\n{combined_contexts}"
-
-        # Create prompt and invoke LLM with combined context
-        document_chain = create_stuff_documents_chain(llm, learning_prompt)
-        retrieval_chain = create_retrieval_chain(retriever, document_chain)
-
-        response = retrieval_chain.invoke({
-            "input": user_query,
-            "context": full_context,
-            "current_topic": current_topic
-        })
-
-        # Handle follow-up questions
-        if is_follow_up_question(user_query):
-            response["answer"] = f"Regarding your previous question, {response['answer']}"
-
-        # Append the current query and response to the history
-        history.append({"query": user_query, "answer": response["answer"]})
-
-        return {"response": response["answer"], "updated_history": history}
-    
-    else:
-        # If no relevant documents are found, use a more general response
-        direct_prompt = f"{combined_history}\n\nUser: {user_query}\nAlfred:"
-        response_from_llm = llm.invoke(direct_prompt)
-
-        # Append the current query and response to the history
-        history.append({"query": user_query, "answer": response_from_llm.content})
-
-        return {"response": response_from_llm.content, "updated_history": history}
+            return {"response": response_from_llm.content, "updated_history": history}
+    except Exception as e:
+        # Log the error for debugging
+        print(f"Error in /ask endpoint: {str(e)}")
+        # Return a user-friendly error message
+        raise HTTPException(status_code=500, detail="An error occurred while processing your request.")
 
 @app.get("/pdfs")
 def get_pdf_list():
