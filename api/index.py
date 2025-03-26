@@ -3,8 +3,6 @@ from pydantic import BaseModel
 import os
 import json
 from dotenv import load_dotenv
-import numpy as np
-import pandas as pd
 
 # LangChain imports
 from langchain_community.vectorstores import FAISS
@@ -36,39 +34,41 @@ app.add_middleware(
 
 
 # Initialize the LLM (ChatGroq in this case)
-llm = ChatGroq(groq_api_key=groq_api_key, model_name="llama-3.3-70b-versatile")
+llm = ChatGroq(groq_api_key=groq_api_key, model_name="gemma2-9b-it")
 
 graded_prompt = ChatPromptTemplate.from_template("""
-**You are 'Alfred', a friendly and knowledgeable assistant.**
+- You are 'Alfred', a friendly and knowledgeable assistant.
+- Mention the important points in bullets or highlight them.
 
 **Graded Question Handling Instructions:**
 - If the User's query is closely related to any of the following graded questions, do not give solution just say its a restricted question.
+- If the query is unrelated to your course material or no matching data exists in the RAG system, do not provide any output.
 
-    Which of the following may not be an appropriate choice of loss function for regression?  
+    **Q1.** Which of the following may not be an appropriate choice of loss function for regression?  
     i. L(y,f(x)) = (y - f(x))^2  
     ii. L(f(x), w)  
     iii. L(f(x), |w|)  
     iv. L(f(x), ∑wi)  
 
-    Identify which of the following requires the use of a classification technique:  
+    **Q2.** Identify which of the following requires the use of a classification technique:  
     i. Predicting the amount of rainfall in May 2022 in North India based on precipitation data of the year 2021  
     ii. Predicting the price of land based on its area and distance from the market  
     iii. Predicting whether an email is spam or not  
     iv. Predicting the number of Covid cases on a given day based on previous month data  
 
-    Which of the following functions is/are continuous?  
+    **Q3.** Which of the following functions is/are continuous?  
     i. 1/(x-1)  
     ii. (x^2 - 1)/(x - 1)  
     iii. sign(x - 2)  
     iv. sin(x)  
 
-    Regarding a d-dimensional vector x, which of the following four options is not equivalent to the rest?  
+    **Q4.** Regarding a d-dimensional vector x, which of the following four options is not equivalent to the rest?  
     i. x^T x  
     ii. ||x||^2  
     iii. ∑(xi^2)  
     iv. x x^T  
 
-    What will the following Python function return?  
+    **Q5.** What will the following Python function return?  
     ```python
     def fun(s):  
         p = 0  
@@ -83,7 +83,7 @@ graded_prompt = ChatPromptTemplate.from_template("""
     iii. Total number of letters that are repeated in the string S more than one time  
     iv. Difference of total letters in the string S and distinct letters in the string S
 
-- If the query is not related to your course material or no similar data found in the RAG database, do not provide any output.
+
 
 **User's Question:** {input}
 **Answer:** {context}
@@ -165,34 +165,19 @@ practice_prompt = ChatPromptTemplate.from_template("""
 """)
 
 learning_prompt = ChatPromptTemplate.from_template("""
-    **Strict Response Protocol**
-     ``` Query not related to course material```
-    1. **Content Validation**:
-       - FIRST check if "{input}" is related to course topics
-       - If NOT related: IMMEDIATELY respond with "Hi there, please ask me a question relevant to your course content?"
-       - DO NOT proceed further for non-course queries
-   
-    2. **Format for Valid Queries**:
-    # {input}\n
-    ---
-    ## Responses\n
-    - [Bullet 1] 
-    - [Bullet 2]\n 
-    ---
-    ## Course Materials\n 
-    {context}\n
-    ---
-    ##External Resources\n
-    [Resource 1](URL1) \n
-    [Resource 2](URL2) \n
-   
-    **Absolute Rules**:
-    1. REJECT without processing if :
-       - cooking, sports, movies, entertainment, etc.
-       - No matching course content exists
-    2. When rejecting queries: ONLY output "Hi there, please ask me a question relevant to your course content?"
-    3. Never invent answers for non-course related topics
-    4. Formatting must EXACTLY match the template
+You are 'Alfred', a friendly and knowledgeable assistant. Please provide a conversational response to the user's query, keeping the following guidelines in mind:
+
+1. Ensure the response is relevant to the course material.
+2. If the query is not related to the course, politely ask the user to ask a course-related question.
+3. Use a natural, conversational tone in your responses.
+4. Provide context from previous interactions when appropriate.
+5. If you're unsure about something, it's okay to say so.
+
+User's question: {input}
+Previous context: {context}
+Current conversation topic: {current_topic}
+
+Please provide a helpful and engaging response:
 """)
 
 # Define prompt templates for debugging code
@@ -242,12 +227,12 @@ else:
 # -------------------------------
 class QueryRequest(BaseModel):
     query: str
-    history: list
+    history: list[dict[str, str]]
     prompt_option: str
 
 class DebugCodeRequest(BaseModel):
-    question: str  # User's debugging question (e.g., "What is wrong with this code?")
-    code: str      # User's Python code to debug
+    question: str
+    code: str
 
 class ClearChatRequest(BaseModel):
     action: str
@@ -258,6 +243,33 @@ class QuestionsRequest(BaseModel):
 # -------------------------------
 # API Endpoints
 # -------------------------------
+
+# Helper Functions for Follow-up/Conservational AI feature
+
+def summarize_conversation(history: list[dict[str, str]], max_length: int = 5) -> str:
+    if len(history) <= max_length:
+        return "\n".join([f"User: {entry['query']}\nAlfred: {entry['answer']}" for entry in history])
+    else:
+        summary = f"Summary of previous {len(history) - max_length} messages:\n"
+        summary += llm.invoke(f"Summarize this conversation:\n{json.dumps(history[:-max_length])}")
+        summary += "\n\nRecent messages:\n"
+        summary += "\n".join([f"User: {entry['query']}\nAlfred: {entry['answer']}" for entry in history[-max_length:]])
+        return summary
+
+def get_topic(question: str) -> str:
+    # Simple topic extraction (can be improved with NLP techniques)
+    keywords = question.lower().split()
+    topics = ['machine learning', 'programming', 'mathematics', 'data science']
+    for topic in topics:
+        if any(keyword in topic for keyword in keywords):
+            return topic
+    return "general"
+
+def is_follow_up_question(question: str) -> bool:
+    follow_up_phrases = ['you mentioned', 'earlier you said', 'previously', 'in relation to']
+    return any(phrase in question.lower() for phrase in follow_up_phrases)
+
+
 
 @app.post("/top-questions")
 def get_top_questions(request: QuestionsRequest):
@@ -306,56 +318,53 @@ def debug_code(request: DebugCodeRequest):
 @app.post("/ask")
 def ask(query_request: QueryRequest):
     user_query = query_request.query.strip()
-    history = query_request.history
-    print(history)
+    history = query_request.history[-10:]  # Keep last 10 interactions
     prompt_option = query_request.prompt_option.strip()
 
     if not user_query:
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
 
     # Combine chat history into context
-    combined_history = "\n".join([f"User: {entry['query']}\nAlfred: {entry['answer']}" for entry in history])
+    combined_history = summarize_conversation(history)
 
-    # Handle "What was my last question?" explicitly
-    if user_query.lower() == "what was my last question?":
+    # Handle "What was my last question?" and similar queries
+    if "last question" in user_query.lower():
         if len(history) > 0:
             last_question = history[-1]["query"]
-            return {"response": f"Your last question was: '{last_question}'", "updated_history": history}
+            last_topic = get_topic(last_question)
+            return {
+                "response": f"Your last question was about {last_topic}. You asked: '{last_question}'",
+                "updated_history": history
+            }
         else:
-            return {"response": "I don't have any record of your previous question.", "updated_history": history}
+            return {
+                "response": "I don't have any record of your previous questions yet. Feel free to ask me anything about the course!",
+                "updated_history": history
+            }
 
-    # Retrieve top 5 relevant document chunks for the query from FAISS database
+    # Retrieve relevant document chunks
     retriever = vector_store.as_retriever(search_kwargs={"k": 5})
     retrieved_docs = retriever.invoke(user_query)
 
-    def get_prompt_type(prompt_option):
-        prompt_type = ''
-        if prompt_option == 'graded':
-            prompt_type = graded_prompt
-        elif prompt_option == 'practice':
-            prompt_type = practice_prompt
-        else:
-            prompt_type = learning_prompt
-        return prompt_type
+    current_topic = get_topic(user_query)
 
     if len(retrieved_docs) > 0:
-        combined_contexts_with_pages = [
-            f"(Page {doc.metadata.get('page', 'Unknown Page')}) {doc.page_content}"
-            for doc in retrieved_docs
-        ]
-        combined_contexts_for_prompt = "\n\n".join(combined_contexts_with_pages)
-
-        # Combine history and retrieved context
-        full_context = f"{combined_history}\n\n{combined_contexts_for_prompt}"
+        combined_contexts = "\n\n".join([doc.page_content for doc in retrieved_docs])
+        full_context = f"{combined_history}\n\n{combined_contexts}"
 
         # Create prompt and invoke LLM with combined context
-        document_chain = create_stuff_documents_chain(llm, get_prompt_type(prompt_option))
+        document_chain = create_stuff_documents_chain(llm, learning_prompt)
         retrieval_chain = create_retrieval_chain(retriever, document_chain)
 
         response = retrieval_chain.invoke({
             "input": user_query,
             "context": full_context,
+            "current_topic": current_topic
         })
+
+        # Handle follow-up questions
+        if is_follow_up_question(user_query):
+            response["answer"] = f"Regarding your previous question, {response['answer']}"
 
         # Append the current query and response to the history
         history.append({"query": user_query, "answer": response["answer"]})
@@ -363,16 +372,14 @@ def ask(query_request: QueryRequest):
         return {"response": response["answer"], "updated_history": history}
     
     else:
-        # If no relevant documents are found in FAISS, call LLM directly with history
-        full_context = combined_history
-        direct_prompt = f"{full_context}\n\nUser: {user_query}\nAlfred:"
+        # If no relevant documents are found, use a more general response
+        direct_prompt = f"{combined_history}\n\nUser: {user_query}\nAlfred:"
         response_from_llm = llm.invoke(direct_prompt)
 
         # Append the current query and response to the history
         history.append({"query": user_query, "answer": response_from_llm.content})
 
         return {"response": response_from_llm.content, "updated_history": history}
-
 
 @app.get("/pdfs")
 def get_pdf_list():
