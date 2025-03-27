@@ -14,6 +14,7 @@ from langchain.chains.retrieval import create_retrieval_chain
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_groq import ChatGroq
 from fastapi.middleware.cors import CORSMiddleware
+from typing import List
 
 # Load environment variables
 load_dotenv()
@@ -34,7 +35,7 @@ app.add_middleware(
 
 
 # Initialize the LLM (ChatGroq in this case)
-llm = ChatGroq(groq_api_key=groq_api_key, model_name="gemma2-9b-it")
+llm = ChatGroq(groq_api_key=groq_api_key, model_name="llama-3.3-70b-versatile")
 
 graded_prompt = ChatPromptTemplate.from_template("""
 **Graded Question Handling Instructions:**
@@ -183,51 +184,43 @@ practice_prompt = ChatPromptTemplate.from_template("""
 
 
 learning_prompt = ChatPromptTemplate.from_template("""
-You are 'Alfred', a friendly and knowledgeable course assistant. Follow these instructions STRICTLY:
-
-**Role & Guidelines**
-1. Use natural, conversational tone while maintaining professional clarity
-2. Provide context from previous interactions when relevant
-3. Admit uncertainty when needed: "I'm not certain about that, but here's what I know..."
-4. Strictly follow the validation and formatting rules below
-
-**Content Validation Protocol**
-1. FIRST analyze: Is "{input}" related to course topics?
-   - Check against: cooking, sports, movies, entertainment, other non-course subjects
-   - If UNRELATED: Respond ONLY with EXACTLY: "Hi there, please ask me a question relevant to your course content?"
-   - If RELATED: Proceed to response creation
-
-**Response Format for Valid Queries**
-# {input}
----
-## Response
-[Provide detailed answer in conversational tone]
-- Use bullet points/numbered lists where appropriate
-- Reference previous context: {context}
-- Current topic: {current_topic}
-
----
-## External Resources
-- [Resource 1](URL1)  
-- [Resource 2](URL2)
-
-**Absolute Requirements**
-1. REJECTION RULES:
-   - Immediate rejection for non-course queries
-   - No variations in rejection message
-2. FORMATTING:
-   - Strict section headers (Response/Course Materials/External Resources)
-   - Markdown formatting EXACTLY as shown
-3. CONTENT:
-   - Never invent answers for unknown topics
-   - Use only provided course materials: {context}
-
-**Conversational Flow**
-- Maintain friendly but professional tone
-- Use phrases like "Based on your previous question..." for context
-- Add transitional phrases: "Let me explain...", "Here's what I found..."
+    **Strict Response Protocol**
+     ``` Query not related to course material```
+    1. **Content Validation**:
+       - FIRST check if "{input}" is related to course topics
+       - If NOT related: IMMEDIATELY respond with "Hi there, please ask me a question relevant to your course content?"
+       - For relevant queries, proceed to the next step and give a detailed response following the format below.
+    2. **Format for Valid Queries**:
+    # {input}\n
+    ---
+    ## Response\n
+    ---
+    
+    ##External Resources\n
+    [Resource 1](URL1) \n
+    [Resource 2](URL2) \n
+   
+    **Absolute Rules**:
+    1. REJECT without processing if :
+       - cooking, sports, movies, entertainment, etc.
+       - No matching course content exists
+    2. When rejecting queries: ONLY output "Hi there, please ask me a question relevant to your course content?"
+    3. Never invent answers for non-course related topics
+    4. Formatting must EXACTLY match the template
+    
+    {context}
 """)
 
+# Define prompt templates for debugging code
+debug_prompt = ChatPromptTemplate.from_template("""
+You are 'Alfred', an expert Python programmer and debugging assistant.
+Analyze the provided Python code and identify any errors or issues.
+Respond with a concise explanation in **two lines only**.
+
+**Code:** {code}
+
+**Question:** {question}
+""")
 
 # Persistent storage paths
 FAISS_INDEX_DIR = "./faiss_index"
@@ -246,6 +239,7 @@ def build_vector_store():
     for doc in docs:
         doc.metadata["source"] = os.path.basename(doc.metadata.get("source", "Unknown PDF"))
         doc.metadata["page"] = doc.metadata.get("page", "Unknown Page")
+        
 
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     final_docs = text_splitter.split_documents(docs)
@@ -265,66 +259,43 @@ else:
 # -------------------------------
 class QueryRequest(BaseModel):
     query: str
-    history: list[dict[str, str]]
+    history: list
     prompt_option: str
 
 class DebugCodeRequest(BaseModel):
-    question: str
-    code: str
+    question: str  # User's debugging question (e.g., "What is wrong with this code?")
+    code: str      # User's Python code to debug
 
 class ClearChatRequest(BaseModel):
     action: str
-
-class QuestionsRequest(BaseModel):
-    questions: list[str]
 
 # -------------------------------
 # API Endpoints
 # -------------------------------
 
-# Helper Functions for Follow-up/Conservational AI feature
+@app.post("/debug/code")
+def debug_code(request: DebugCodeRequest):
+    user_question = request.question.strip()
+    user_code = request.code.strip()
 
-# Add this import at the top of your file
-from langchain_core.messages import AIMessage
+    if not user_question or not user_code:
+        raise HTTPException(status_code=400, detail="Both 'question' and 'code' fields are required.")
 
-# Modify your summarize_conversation function
-def summarize_conversation(history: list[dict[str, str]], max_length: int = 5) -> str:
-    if len(history) <= max_length:
-        return "\n".join([f"User: {entry['query']}\nAlfred: {entry['answer']}" for entry in history])
-    else:
-        summary = f"Summary of previous {len(history) - max_length} messages:\n"
-        summary_prompt = f"Summarize this conversation:\n{json.dumps(history[:-max_length])}"
-        summary_response = llm.invoke(summary_prompt)
-        
-        # Handle different response types
-        if isinstance(summary_response, AIMessage):
-            summary += summary_response.content
-        elif hasattr(summary_response, 'content'):
-            summary += summary_response.content
-        else:
-            summary += str(summary_response)
-            
-        summary += "\n\nRecent messages:\n"
-        summary += "\n".join([f"User: {entry['query']}\nAlfred: {entry['answer']}" for entry in history[-max_length:]])
-        return summary
+    # Create prompt for debugging code and invoke LLM
+    prompt_input = debug_prompt.format(question=user_question, code=user_code)
+    
+    # Pass the prompt directly as a string to llm.invoke()
+    response_from_llm = llm.invoke(prompt_input)
+
+    return {"response": response_from_llm.content}
 
 
 
-def get_topic(question: str) -> str:
-    # Simple topic extraction (can be improved with NLP techniques)
-    keywords = question.lower().split()
-    topics = ['machine learning', 'programming', 'mathematics', 'data science']
-    for topic in topics:
-        if any(keyword in topic for keyword in keywords):
-            return topic
-    return "general"
 
-def is_follow_up_question(question: str) -> bool:
-    follow_up_phrases = ['you mentioned', 'earlier you said', 'previously', 'in relation to','so','and','ok','okay']
-    return any(phrase in question.lower() for phrase in follow_up_phrases)
-
-
-
+ 
+class QuestionsRequest(BaseModel):
+    questions: List[str]
+    
 @app.post("/top-questions")
 def get_top_questions(request: QuestionsRequest):
  
@@ -349,97 +320,66 @@ def get_top_questions(request: QuestionsRequest):
     "QUESTIONS:\n" +
     "\n".join(f"- {question}" for question in questions)
 )
+
     response_from_llm = llm.invoke(prompt_input)
     return {"response": response_from_llm.content}
 
 
-@app.post("/debug/code")
-def debug_code(request: DebugCodeRequest):
-    user_question = request.question.strip()
-    user_code = request.code.strip()
-
-    if not user_question or not user_code:
-        raise HTTPException(status_code=400, detail="Both 'question' and 'code' fields are required.")
-
-    # Create prompt for debugging code and invoke LLM
-    prompt_input = debug_prompt.format(question=user_question, code=user_code)
-    
-    # Pass the prompt directly as a string to llm.invoke()
-    response_from_llm = llm.invoke(prompt_input)
-
-    return {"response": response_from_llm.content}
 
 @app.post("/ask")
 def ask(query_request: QueryRequest):
-    try:
-        user_query = query_request.query.strip()
-        history = query_request.history[-10:]  # Keep last 10 interactions
-        prompt_option = query_request.prompt_option.strip()
+    user_query = query_request.query.strip()
+    history = query_request.history
+    prompt_option = query_request.prompt_option.strip()
 
-        if not user_query:
-            raise HTTPException(status_code=400, detail="Query cannot be empty.")
+    if not user_query:
+        raise HTTPException(status_code=400, detail="Query cannot be empty.")
 
-        # Combine chat history into context
-        combined_history = summarize_conversation(history)
+    # Combine chat history into context
+    combined_history = "\n".join([f"User: {entry['query']}\nAlfred: {entry['answer']}" for entry in history])
 
-        # Handle "What was my last question?" and similar queries
-        if "last question" in user_query.lower():
-            if len(history) > 0:
-                last_question = history[-1]["query"]
-                last_topic = get_topic(last_question)
-                return {
-                    "response": f"Your last question was about {last_topic}. You asked: '{last_question}'",
-                    "updated_history": history
-                }
-            else:
-                return {
-                    "response": "I don't have any record of your previous questions yet. Feel free to ask me anything about the course!",
-                    "updated_history": history
-                }
-
-        # Retrieve relevant document chunks
-        retriever = vector_store.as_retriever(search_kwargs={"k": 5})
-        retrieved_docs = retriever.invoke(user_query)
-
-        current_topic = get_topic(user_query)
-
-        if len(retrieved_docs) > 0:
-            combined_contexts = "\n\n".join([doc.page_content for doc in retrieved_docs])
-            full_context = f"{combined_history}\n\n{combined_contexts}"
-
-            # Create prompt and invoke LLM with combined context
-            document_chain = create_stuff_documents_chain(llm, learning_prompt)
-            retrieval_chain = create_retrieval_chain(retriever, document_chain)
-
-            response = retrieval_chain.invoke({
-                "input": user_query,
-                "context": full_context,
-                "current_topic": current_topic
-            })
-
-            # Handle follow-up questions
-            if is_follow_up_question(user_query):
-                response["answer"] = f"Regarding your previous question, {response['answer']}"
-
-            # Append the current query and response to the history
-            history.append({"query": user_query, "answer": response["answer"]})
-
-            return {"response": response["answer"], "updated_history": history}
-        
+    # Retrieve top 5 relevant document chunks for the query from FAISS database
+    retriever = vector_store.as_retriever(search_kwargs={"k": 5})
+    retrieved_docs = retriever.invoke(user_query)
+    def get_prompt_type(prompt_option):
+        prompt_type=''
+        if (prompt_option == 'graded'):
+            prompt_type = graded_prompt
+        elif(prompt_option == 'practice'):
+            prompt_type = practice_prompt
         else:
-            # If no relevant documents are found, use a more general response
-            direct_prompt = f"{combined_history}\n\nUser: {user_query}\nAlfred:"
-            response_from_llm = llm.invoke(direct_prompt)
+            prompt_type = learning_prompt
+        return prompt_type
 
-            # Append the current query and response to the history
-            history.append({"query": user_query, "answer": response_from_llm.content})
+    if len(retrieved_docs) > 0:
+        combined_contexts_with_pages = [
+            f"(Page {doc.metadata.get('page', 'Unknown Page')}) {doc.page_content}"
+            for doc in retrieved_docs
+        ]
+        combined_contexts_for_prompt = "\n\n".join(combined_contexts_with_pages)
 
-            return {"response": response_from_llm.content, "updated_history": history}
-    except Exception as e:
-        # Log the error for debugging
-        print(f"Error in /ask endpoint: {str(e)}")
-        # Return a user-friendly error message
-        raise HTTPException(status_code=500, detail="An error occurred while processing your request.")
+        # Combine history and retrieved context
+        full_context = f"{combined_history}\n\n{combined_contexts_for_prompt}"
+
+        # Create prompt and invoke LLM with combined context
+        document_chain = create_stuff_documents_chain(llm, get_prompt_type(prompt_option))
+        retrieval_chain = create_retrieval_chain(retriever, document_chain)
+
+        response = retrieval_chain.invoke({
+            "input": user_query,
+            "context": full_context,
+        })
+
+        return {"response": response["answer"]}
+    
+    else:
+        # If no relevant documents are found in FAISS, call LLM directly with history
+        full_context = combined_history
+        direct_prompt = f"{full_context}\n\nUser: {user_query}\nAlfred:"
+        response_from_llm = llm.invoke({"input": direct_prompt})
+        
+        return {"response": response_from_llm.content}
+
 
 @app.get("/pdfs")
 def get_pdf_list():
