@@ -23,7 +23,7 @@ A Retrieval-Augmented Generation (RAG) system built with FastAPI and LangChain t
 ## Installation
 
 1. **Clone Repository**:
-git clone [https://github.com/yourusername/deepseek-rag-portal.git cd deepseek-rag-portal](https://github.com/anujgupta95/SE-project-RAG.git)
+git clone https://github.com/anujgupta95/SE-project-RAG.git
 
 2. **Set Up Virtual Environment**:
 python -m venv venv source venv/bin/activate # Linux/MacOS
